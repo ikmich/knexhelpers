@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+.env
+packlib-config.js
+packlib-config.cjs
+packlib-config.mjs
+.idea/
+.vscode/
+.DS_Store
