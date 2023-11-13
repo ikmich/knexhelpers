@@ -10,8 +10,8 @@ function _fn<T extends any>(f: () => T): T {
   return f();
 }
 
-class KnexUtil {
-  private readonly client: string;
+class SimpleKnexUtil {
+  public readonly client: string;
 
   constructor(private readonly knex: Knex) {
     this.client = this.knex.client?.config?.client || '';
@@ -35,7 +35,7 @@ class KnexUtil {
  * @param knex
  */
 export function _knexUtil(knex: Knex) {
-  return new KnexUtil(knex);
+  return new SimpleKnexUtil(knex);
 }
 
 export const tableUtils = {
@@ -74,8 +74,28 @@ export async function _datetimeColumn(columnName: string, b: Knex.CreateTableBui
   b.datetime(columnName, opts);
 }
 
+
+/**
+ * CreateTableBuilder columns for created_at and updated_at.
+ * @deprecated Use _createdUpdatedAtColumns(...) instead.
+ * @param knex
+ * @param b
+ * @param table
+ * @param useTimezone
+ */
 export async function _timestampColumns(knex: Knex, b: Knex.CreateTableBuilder, table: string, useTimezone: boolean = false) {
-  const knexUtil = new KnexUtil(knex);
+  await _createdUpdatedAtColumns(knex, b, table, useTimezone);
+}
+
+/**
+ * CreateTableBuilder columns for created_at and updated_at.
+ * @param knex
+ * @param b
+ * @param table
+ * @param useTimezone
+ */
+export async function _createdUpdatedAtColumns(knex: Knex, b: Knex.CreateTableBuilder, table: string, useTimezone: boolean = false) {
+  const knexUtil = new SimpleKnexUtil(knex);
 
   const createdAtDefaultSql = _fn(() => {
     if (knexUtil.isSqliteClient()) {
@@ -123,6 +143,9 @@ EXECUTE PROCEDURE ${FUNCTION_UPDATE_UPDATED_AT_COLUMN}();
   }
 }
 
+/**
+ * Utils for mysql.
+ */
 export const mysqlUtil = {
   async foreignKeyChecks(knex: Knex, state: 'on' | 'off') {
     const map = {
@@ -130,6 +153,27 @@ export const mysqlUtil = {
       off: 0
     };
     await knex.raw(`SET foreign_key_checks = ${map[state]}`);
+  }
+};
+
+/**
+ * Utils for postgres.
+ */
+export const pgUtil = {
+  async createExtension_uuidOssp(knex: Knex) {
+    if (_knexUtil(knex).isPostgresClient()) {
+      await knex.raw(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
+    }
+  },
+
+  async createFunction_updateUpdatedAtColumn(knex: Knex, functionName: string = FUNCTION_UPDATE_UPDATED_AT_COLUMN) {
+    await knex.raw(`CREATE OR REPLACE FUNCTION ${functionName}()
+RETURNS TRIGGER AS $$
+BEGIN
+   NEW.updated_at = now(); 
+   RETURN NEW;
+END;
+$$ language 'plpgsql';`);
   }
 };
 
