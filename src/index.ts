@@ -165,13 +165,3 @@ export async function migrateDownTableInitMap(knex: Knex, map: MigrationTableIni
     await knex.schema.dropTableIfExists(table);
   }
 }
-
-//
-// export abstract class DbTableReader<T, O = { [k: string]: T }, P = { [k: string]: T[] }> {
-//   protected constructor(private readonly knex: Knex) {
-//   }
-//
-//   abstract indexItems(columns: string[]): Promise<O>
-//
-//   abstract mapItemGroups(columns: string[]): Promise<P>
-// }
