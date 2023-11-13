@@ -1,3 +1,5 @@
+// noinspection JSUnusedGlobalSymbols
+
 import { Knex } from 'knex';
 import { logInfo } from './log.util.js';
 
@@ -65,11 +67,14 @@ export function _serialPrimaryKey(b: Knex.CreateTableBuilder, column: string = '
   return _intPrimaryKey(b, column);
 }
 
-export async function _datetimeColumn(columnName: string, b: Knex.CreateTableBuilder) {
-  b.datetime(columnName, { precision: DATETIME_PRECISION });
+export async function _datetimeColumn(columnName: string, b: Knex.CreateTableBuilder, withTimezone?: boolean) {
+  // let options: any = { precision: DATETIME_PRECISION, useTz: withTimezone ?? false };
+  type TOpts = { useTz?: boolean; precision?: number };
+  const opts: TOpts = { useTz: withTimezone ?? false, precision: DATETIME_PRECISION };
+  b.datetime(columnName, opts);
 }
 
-export async function _timestampColumns(knex: Knex, b: Knex.CreateTableBuilder, table: string) {
+export async function _timestampColumns(knex: Knex, b: Knex.CreateTableBuilder, table: string, useTimezone: boolean = false) {
   const knexUtil = new KnexUtil(knex);
 
   const createdAtDefaultSql = _fn(() => {
@@ -93,7 +98,7 @@ export async function _timestampColumns(knex: Knex, b: Knex.CreateTableBuilder, 
 
   type TOpts = { useTz?: boolean; precision?: number };
   const opts: TOpts = _fn(() => {
-    const base: TOpts = { useTz: false };
+    const base: TOpts = { useTz: useTimezone };
     if (knexUtil.isSqliteClient()) {
       return base;
     }
@@ -129,23 +134,23 @@ export const mysqlUtil = {
 };
 
 export interface TableInit {
-  table: string;
+  // table: string;
   create?: (knex: Knex) => Promise<void>;
   seed?: (knex: Knex) => Promise<void>;
 }
 
-export type TableInitMap = { [table: string]: TableInit };
+export type MigrationTableInitMap = { [table: string]: TableInit };
 
-export async function migrateUpTableInitMap(knex: Knex, map: TableInitMap) {
+export async function migrateUpTableInitMap(knex: Knex, map: MigrationTableInitMap) {
   const t0 = performance.now();
 
   let tables = Object.keys(map);
   for (let table of tables) {
-    logInfo(`-> Running table-init migration for ${table} ...`);
+    logInfo(`-> Running table-init migration for ${table} table ...`);
     const init = map[table];
     await init.create?.(knex);
     await init.seed?.(knex);
-    logInfo(`-> Completed table-init migration for ${table}.`);
+    logInfo(`-> Done: table-init migration for ${table} table.`);
   }
 
   const t1 = performance.now();
@@ -154,7 +159,7 @@ export async function migrateUpTableInitMap(knex: Knex, map: TableInitMap) {
   console.log('');
 }
 
-export async function migrateDownTableInitMap(knex: Knex, map: TableInitMap) {
+export async function migrateDownTableInitMap(knex: Knex, map: MigrationTableInitMap) {
   let tables = Object.keys(map).reverse();
   for (let table of tables) {
     await knex.schema.dropTableIfExists(table);
