@@ -60,7 +60,9 @@ export function _knexUtil(knex: Knex) {
 }
 
 /**
- * Helper to create uuid primary key with default value.
+ * Helper to create uuid primary key with default value. If using postgres, ensure the uuid-ossp extension is
+ * installed or an error will be thrown. You can do this by calling `pgUtil.createExtension_uuidOssp(knex)`
+ * before any migrations run.
  * @param knex
  * @param b
  * @param column
@@ -236,27 +238,29 @@ export interface TableInit {
 
 export type MigrationTableInitMap = { [table: string]: TableInit };
 
-export async function migrateUpTableInitMap(knex: Knex, map: MigrationTableInitMap) {
-  const t0 = performance.now();
 
-  let tables = Object.keys(map);
-  for (let table of tables) {
-    logInfo(`-> Running table-init migration for ${table} table ...`);
-    const init = map[table];
-    await init.create?.(knex);
-    await init.seed?.(knex);
-    logInfo(`-> Done: table-init migration for ${table} table.`);
+export const migrationHelper = {
+  async migrateUpTableInitMap(knex: Knex, map: MigrationTableInitMap) {
+    const t0 = performance.now();
+
+    let tables = Object.keys(map);
+    for (let table of tables) {
+      logInfo(`-> Running table-init migration for ${table} table ...`);
+      const init = map[table];
+      await init.create?.(knex);
+      await init.seed?.(knex);
+      logInfo(`-> Done: table-init migration for ${table} table.`);
+    }
+
+    const t1 = performance.now();
+    const tDiff = t1 - t0;
+    logInfo(`Migration completed in: ${(tDiff / 1000).toFixed(2)} seconds`);
+    console.log('');
+  },
+  async migrateDownTableInitMap(knex: Knex, map: MigrationTableInitMap) {
+    let tables = Object.keys(map).reverse();
+    for (let table of tables) {
+      await knex.schema.dropTableIfExists(table);
+    }
   }
-
-  const t1 = performance.now();
-  const tDiff = t1 - t0;
-  logInfo(`Migration completed in: ${(tDiff / 1000).toFixed(2)} seconds`);
-  console.log('');
-}
-
-export async function migrateDownTableInitMap(knex: Knex, map: MigrationTableInitMap) {
-  let tables = Object.keys(map).reverse();
-  for (let table of tables) {
-    await knex.schema.dropTableIfExists(table);
-  }
-}
+};

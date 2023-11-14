@@ -3,12 +3,8 @@ dist/
 build/
 .env
 packlib-config.js
-
 packlib-config.mjs
 .idea/
 .vscode/
 .DS_Store
 packlib-config.cjs
-
-packlib--knexhelpers-0.0.21
-packlib--knexhelpers-0.0.24
