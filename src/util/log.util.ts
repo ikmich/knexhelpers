@@ -23,5 +23,5 @@ export function logSuccess(arg0?: any, ...arg1: any[]) {
 
 export function logInfo(arg0?: any, ...arg1: any[]) {
   // blueBright
-  console.log(chalk.hex('#20A1FF')(arg0, arg1));
+  console.log(chalk.hex('#20b1ff')(arg0, arg1));
 }

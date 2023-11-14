@@ -1,62 +1,14 @@
 // noinspection JSUnusedGlobalSymbols
 
 import { Knex } from 'knex';
-import { logInfo } from './log.util.js';
-
-const DATETIME_PRECISION = 4;
-const FUNCTION_UPDATE_UPDATED_AT_COLUMN = 'update_updated_at_column';
+import { DATETIME_PRECISION, FUNCTION_UPDATE_UPDATED_AT_COLUMN } from './constants.js';
+import { _knexUtil } from './util/knex.util.js';
+import { pgHelper } from './postgres.helpers.js';
 
 export type DateTimeColumnOpts = { useTz?: boolean; precision?: number };
 
 function _fn<T extends any>(f: () => T): T {
   return f();
-}
-
-let knexUtilInstance: KnexUtil;
-
-class KnexUtil {
-  public readonly client: string;
-
-  public readonly tableUtil;
-
-  constructor(private readonly knex: Knex) {
-    this.client = this.knex.client?.config?.client || '';
-
-    const _this = this;
-
-    this.tableUtil = {
-      async truncate(knex: Knex, table: string) {
-        if (_this.isSqliteClient()) {
-          await knex.raw(`delete from ${table}`);
-        } else {
-          await knex.raw(`truncate ${table}`);
-        }
-      }
-    };
-  }
-
-  isMysqlClient() {
-    return ['mysql', 'mysql2'].includes(this.client);
-  }
-
-  isPostgresClient() {
-    return ['postgres', 'postgresql', 'pg'].includes(this.client);
-  }
-
-  isSqliteClient() {
-    return this.client.includes('sqlite');
-  }
-}
-
-/**
- * Create KnexUtil class.
- * @param knex
- */
-export function _knexUtil(knex: Knex) {
-  if (!knexUtilInstance) {
-    knexUtilInstance = new KnexUtil(knex);
-  }
-  return knexUtilInstance;
 }
 
 /**
@@ -170,7 +122,7 @@ export async function _createdUpdatedAtColumns(knex: Knex, b: Knex.CreateTableBu
 
   if (util.isPostgresClient()) {
     // create trigger function if not exists...
-    await pgUtil.createFunction_updateUpdatedAtColumn(knex);
+    await pgHelper.createFunction_updateUpdatedAtColumn(knex);
 
     // set trigger for postgres
     await knex.raw(`CREATE TRIGGER update_${table}_updated_at
@@ -208,27 +160,6 @@ export const mysqlUtil = {
   }
 };
 
-/**
- * Utils for postgres.
- */
-export const pgUtil = {
-  async createExtension_uuidOssp(knex: Knex) {
-    if (_knexUtil(knex).isPostgresClient()) {
-      await knex.raw(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
-    }
-  },
-
-  async createFunction_updateUpdatedAtColumn(knex: Knex, functionName: string = FUNCTION_UPDATE_UPDATED_AT_COLUMN) {
-    await knex.raw(`
-CREATE OR REPLACE FUNCTION ${functionName}()
-RETURNS TRIGGER AS $$
-BEGIN
-   NEW.updated_at = now(); 
-   RETURN NEW;
-END;
-$$ language 'plpgsql';`);
-  }
-};
 
 export interface TableInit {
   // table: string;
@@ -238,29 +169,6 @@ export interface TableInit {
 
 export type MigrationTableInitMap = { [table: string]: TableInit };
 
-
-export const migrationHelper = {
-  async migrateUpTableInitMap(knex: Knex, map: MigrationTableInitMap) {
-    const t0 = performance.now();
-
-    let tables = Object.keys(map);
-    for (let table of tables) {
-      logInfo(`-> Running table-init migration for ${table} table ...`);
-      const init = map[table];
-      await init.create?.(knex);
-      await init.seed?.(knex);
-      logInfo(`-> Done: table-init migration for ${table} table.`);
-    }
-
-    const t1 = performance.now();
-    const tDiff = t1 - t0;
-    logInfo(`Migration completed in: ${(tDiff / 1000).toFixed(2)} seconds`);
-    console.log('');
-  },
-  async migrateDownTableInitMap(knex: Knex, map: MigrationTableInitMap) {
-    let tables = Object.keys(map).reverse();
-    for (let table of tables) {
-      await knex.schema.dropTableIfExists(table);
-    }
-  }
-};
+export * from './migration.helpers.js';
+export * from './postgres.helpers.js';
+export * from './knex-config.helpers.js';
