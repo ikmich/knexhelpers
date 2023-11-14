@@ -6,15 +6,33 @@ import { logInfo } from './log.util.js';
 const DATETIME_PRECISION = 4;
 const FUNCTION_UPDATE_UPDATED_AT_COLUMN = 'update_updated_at_column';
 
+export type DateTimeColumnOpts = { useTz?: boolean; precision?: number };
+
 function _fn<T extends any>(f: () => T): T {
   return f();
 }
 
-class SimpleKnexUtil {
+let knexUtilInstance: KnexUtil;
+
+class KnexUtil {
   public readonly client: string;
+
+  public readonly tableUtil;
 
   constructor(private readonly knex: Knex) {
     this.client = this.knex.client?.config?.client || '';
+
+    const _this = this;
+
+    this.tableUtil = {
+      async truncate(knex: Knex, table: string) {
+        if (_this.isSqliteClient()) {
+          await knex.raw(`delete from ${table}`);
+        } else {
+          await knex.raw(`truncate ${table}`);
+        }
+      }
+    };
   }
 
   isMysqlClient() {
@@ -35,19 +53,18 @@ class SimpleKnexUtil {
  * @param knex
  */
 export function _knexUtil(knex: Knex) {
-  return new SimpleKnexUtil(knex);
+  if (!knexUtilInstance) {
+    knexUtilInstance = new KnexUtil(knex);
+  }
+  return knexUtilInstance;
 }
 
-export const tableUtils = {
-  async truncate(knex: Knex, table: string) {
-    if (_knexUtil(knex).isSqliteClient()) {
-      await knex.raw(`delete from ${table}`);
-    } else {
-      await knex.raw(`truncate ${table}`);
-    }
-  }
-};
-
+/**
+ * Helper to create uuid primary key with default value.
+ * @param knex
+ * @param b
+ * @param column
+ */
 export function _uuidPrimaryKey(knex: Knex, b: Knex.CreateTableBuilder, column: string = 'id') {
   let defaultValueSql = _fn(() => {
     if (_knexUtil(knex).isPostgresClient()) {
@@ -59,21 +76,40 @@ export function _uuidPrimaryKey(knex: Knex, b: Knex.CreateTableBuilder, column: 
   b.uuid(column).primary().defaultTo(knex.raw(defaultValueSql)).notNullable();
 }
 
+/**
+ * Helper to create auto-incrementing primary key
+ * @param b
+ * @param column
+ */
 export function _intPrimaryKey(b: Knex.CreateTableBuilder, column: string = 'id') {
   b.increments(column).primary().notNullable();
 }
 
+/**
+ * Helper to create auto-incrementing primary key
+ * @param b
+ * @param column
+ */
 export function _serialPrimaryKey(b: Knex.CreateTableBuilder, column: string = 'id') {
   return _intPrimaryKey(b, column);
 }
 
-export async function _datetimeColumn(columnName: string, b: Knex.CreateTableBuilder, withTimezone?: boolean) {
-  // let options: any = { precision: DATETIME_PRECISION, useTz: withTimezone ?? false };
-  type TOpts = { useTz?: boolean; precision?: number };
-  const opts: TOpts = { useTz: withTimezone ?? false, precision: DATETIME_PRECISION };
-  b.datetime(columnName, opts);
-}
+/**
+ * Helper to create datetime column.
+ * @param column
+ * @param knex
+ * @param b
+ * @param withTimezone
+ */
+export async function _datetimeColumn(column: string, knex: Knex, b: Knex.CreateTableBuilder, withTimezone?: boolean) {
+  const opts: DateTimeColumnOpts = { useTz: withTimezone ?? false, precision: DATETIME_PRECISION };
+  const util = _knexUtil(knex);
+  if (util.isSqliteClient()) {
+    delete opts.precision;
+  }
 
+  b.datetime(column, opts);
+}
 
 /**
  * CreateTableBuilder columns for created_at and updated_at.
@@ -95,31 +131,30 @@ export async function _timestampColumns(knex: Knex, b: Knex.CreateTableBuilder, 
  * @param useTimezone
  */
 export async function _createdUpdatedAtColumns(knex: Knex, b: Knex.CreateTableBuilder, table: string, useTimezone: boolean = false) {
-  const knexUtil = new SimpleKnexUtil(knex);
+  const util = _knexUtil(knex);
 
   const createdAtDefaultSql = _fn(() => {
-    if (knexUtil.isSqliteClient()) {
+    if (util.isSqliteClient()) {
       return 'CURRENT_TIMESTAMP';
     }
     return `CURRENT_TIMESTAMP(${DATETIME_PRECISION})`;
   });
 
   const updatedAtDefaultSql = _fn(() => {
-    if (knexUtil.isSqliteClient()) {
-      return `CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP}`;
+    if (util.isSqliteClient()) {
+      return `CURRENT_TIMESTAMP}`;
     }
 
-    if (knexUtil.isMysqlClient()) {
+    if (util.isMysqlClient()) {
       return `CURRENT_TIMESTAMP(${DATETIME_PRECISION}) ON UPDATE CURRENT_TIMESTAMP}`;
     }
 
     return `CURRENT_TIMESTAMP(${DATETIME_PRECISION})`;
   });
 
-  type TOpts = { useTz?: boolean; precision?: number };
-  const opts: TOpts = _fn(() => {
-    const base: TOpts = { useTz: useTimezone };
-    if (knexUtil.isSqliteClient()) {
+  const opts: DateTimeColumnOpts = _fn(() => {
+    const base: DateTimeColumnOpts = { useTz: useTimezone };
+    if (util.isSqliteClient()) {
       return base;
     }
     return {
@@ -131,15 +166,30 @@ export async function _createdUpdatedAtColumns(knex: Knex, b: Knex.CreateTableBu
   b.datetime('created_at', opts).defaultTo(knex.raw(createdAtDefaultSql));
   b.datetime('updated_at', opts).defaultTo(knex.raw(updatedAtDefaultSql));
 
-  if (knexUtil.isPostgresClient()) {
-    // trigger
+  if (util.isPostgresClient()) {
+    // create trigger function if not exists...
+    await pgUtil.createFunction_updateUpdatedAtColumn(knex);
+
+    // set trigger for postgres
     await knex.raw(`CREATE TRIGGER update_${table}_updated_at
-    BEFORE UPDATE
-    ON
-        "${table}"
-    FOR EACH ROW
+BEFORE UPDATE
+ON
+  "${table}"
+FOR EACH ROW
 EXECUTE PROCEDURE ${FUNCTION_UPDATE_UPDATED_AT_COLUMN}();
 `);
+  } else if (util.isSqliteClient()) {
+    // todo - test sqlite trigger
+    // set trigger for sqlite
+    await knex.raw(`
+CREATE TRIGGER update_${table}_updated_at
+  BEFORE UPDATE
+  ON "${table}"
+  FOR EACH ROW
+BEGIN
+  UPDATE ${table} SET updated_at = CURRENT_TIMESTAMP
+END;
+`); /* WHERE id = OLD.id*/
   }
 }
 
@@ -167,7 +217,8 @@ export const pgUtil = {
   },
 
   async createFunction_updateUpdatedAtColumn(knex: Knex, functionName: string = FUNCTION_UPDATE_UPDATED_AT_COLUMN) {
-    await knex.raw(`CREATE OR REPLACE FUNCTION ${functionName}()
+    await knex.raw(`
+CREATE OR REPLACE FUNCTION ${functionName}()
 RETURNS TRIGGER AS $$
 BEGIN
    NEW.updated_at = now(); 
