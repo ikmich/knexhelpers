@@ -1,6 +1,6 @@
 {
   "name": "knexhelpers",
-  "version": "0.0.27-alpha",
+  "version": "0.0.28-alpha",
   "description": "Helpers for working with Knex",
   "main": "dist/index.js",
   "type": "module",
@@ -23,7 +23,18 @@
     "helpers"
   ],
   "author": "Ikenna Agbasimalo <michfx@gmail.com>",
+  "bugs": {
+    "email": "michfx@gmail.com",
+    "url": "https://github.com/ikmich/knexhelpers/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ikmich/knexhelpers"
+  },
   "license": "MIT",
+  "engines": {
+    "node": ">=16"
+  },
   "devDependencies": {
     "@types/node": "^20.9.0",
     "prettier": "^3.0.3",
